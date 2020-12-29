@@ -12,10 +12,14 @@ from scipy.ndimage import label, center_of_mass
 import shutil
 from imageio import imwrite
 import sol4_utils
+from scipy.signal import convolve2d
 
 
 def derive_image(im):
-    pass
+    der_ker = np.array([[1, 0, -1]])
+    x_der = convolve2d(im, der_ker, 'same')
+    y_der = convolve2d(im, np.transpose(der_ker), 'same')
+    return [x_der, y_der]
 
 
 def harris_corner_detector(im):
@@ -25,7 +29,30 @@ def harris_corner_detector(im):
     :param im: A 2D array representing an image.
     :return: An array with shape (N,2), where ret[i,:] are the [x,y] coordinates of the ith corner points.
     """
-    pass
+    der_x, der_y = derive_image(im)
+    derx_sq = np.square(der_x)
+    dery_sq = np.square(der_y)
+    multiplican_res_of_der = np.multiply(der_x, der_y)
+
+    x_blur = sol4_utils.blur_spatial(derx_sq, 3)
+    y_blur = sol4_utils.blur_spatial(dery_sq, 3)
+    multiplican_res_blurred = sol4_utils.blur_spatial(multiplican_res_of_der, 3)
+
+    m = np.array([[x_blur, multiplican_res_blurred], [multiplican_res_blurred, y_blur]])
+    det_m = np.multiply(x_blur, y_blur) - np.multiply(multiplican_res_blurred, multiplican_res_blurred)
+    trace_m = x_blur + y_blur
+    trace_m_sq = np.square(trace_m)
+    r = det_m - (0.04 * trace_m_sq)
+    res = non_maximum_suppression(r)
+    ret = np.argwhere(res.transpose() == 1)
+
+    plt.subplot(2, 2, 1)
+    plt.imshow(r, cmap="gray")
+    plt.subplot(2, 2, 2)
+    plt.imshow(res, cmap="gray")
+    plt.show()
+    print(ret)
+    return ret
 
 
 def sample_descriptor(im, pos, desc_rad):
