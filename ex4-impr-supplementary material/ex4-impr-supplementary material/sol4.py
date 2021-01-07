@@ -46,12 +46,12 @@ def harris_corner_detector(im):
     res = non_maximum_suppression(r)
     ret = np.argwhere(res.transpose() == 1)
 
-    plt.subplot(2, 2, 1)
-    plt.imshow(r, cmap="gray")
-    plt.subplot(2, 2, 2)
-    plt.imshow(res, cmap="gray")
-    plt.show()
-    print(ret)
+    # plt.subplot(2, 2, 1)
+    # plt.imshow(r, cmap="gray")
+    # plt.subplot(2, 2, 2)
+    # plt.imshow(res, cmap="gray")
+    # plt.show()
+    # print(ret)
     return ret
 
 
