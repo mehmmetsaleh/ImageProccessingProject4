@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from scipy.ndimage.morphology import generate_binary_structure
 from scipy.ndimage.filters import maximum_filter
-from scipy.ndimage import label, center_of_mass
+from scipy.ndimage import label, center_of_mass, map_coordinates
 import shutil
 from imageio import imwrite
 import sol4_utils
@@ -38,7 +38,7 @@ def harris_corner_detector(im):
     y_blur = sol4_utils.blur_spatial(dery_sq, 3)
     multiplican_res_blurred = sol4_utils.blur_spatial(multiplican_res_of_der, 3)
 
-    m = np.array([[x_blur, multiplican_res_blurred], [multiplican_res_blurred, y_blur]])
+    # m = np.array([[x_blur, multiplican_res_blurred], [multiplican_res_blurred, y_blur]])
     det_m = np.multiply(x_blur, y_blur) - np.multiply(multiplican_res_blurred, multiplican_res_blurred)
     trace_m = x_blur + y_blur
     trace_m_sq = np.square(trace_m)
@@ -63,7 +63,26 @@ def sample_descriptor(im, pos, desc_rad):
     :param desc_rad: "Radius" of descriptors to compute.
     :return: A 3D array with shape (N,K,K) containing the ith descriptor at desc[i,:,:].
     """
-    pass
+    up_left_x_coords = np.add(pos[:, 0], - desc_rad)
+    up_left_y_coords = np.add(pos[:, 1], - desc_rad)
+    up_left_coordinates = np.array([up_left_x_coords, up_left_y_coords])
+    k = 1 + (2 * desc_rad)
+    x_grid, y_grid = np.array(np.meshgrid(range(k), range(k)))
+    descriptors = np.zeros((len(pos), k, k))
+
+    for i in range(len(pos)):
+        x_cor = up_left_coordinates[0][i]
+        y_cor = up_left_coordinates[1][i]
+        # here we get a kxk area around each corner point
+        range_2d = np.array([np.add(y_cor, y_grid), np.add(x_grid, x_cor)])  # image coords are (y,x), not (x,y)
+        desc = map_coordinates(im, range_2d, prefilter=False, order=1)
+        samples_mean = np.mean(desc)
+        norm = np.linalg.norm(desc - samples_mean)
+        if norm != 0:
+            descriptors[i] = np.divide((desc - samples_mean), norm)
+        else:
+            descriptors[i] = np.zeros(desc.shape)
+    return descriptors
 
 
 def find_features(pyr):
@@ -75,7 +94,11 @@ def find_features(pyr):
                    These coordinates are provided at the pyramid level pyr[0].
                 2) A feature descriptor array with shape (N,K,K)
     """
-    pass
+    corner_points = spread_out_corners(pyr[0], 7, 7, 7)
+    lvl3_point_translator = np.array([0.25 * corner_points[:, 0], 0.25 * corner_points[:, 1]]).transpose()
+    postions_lvl3 = np.array(lvl3_point_translator)
+    descs = sample_descriptor(pyr[2], postions_lvl3, 3)
+    return [corner_points, descs]
 
 
 def match_features(desc1, desc2, min_score):
@@ -88,7 +111,24 @@ def match_features(desc1, desc2, min_score):
                 1) An array with shape (M,) and dtype int of matching indices in desc1.
                 2) An array with shape (M,) and dtype int of matching indices in desc2.
     """
-    pass
+    flattened_desc1 = desc1.reshape(desc1.shape[0], np.square(desc1.shape[1]))
+    flattened_desc2 = desc2.reshape(desc2.shape[0], np.square(desc2.shape[1]))
+    dot_product = np.dot(flattened_desc1, np.transpose(flattened_desc2))
+
+    # checking conditions:
+    max_features = np.array(np.zeros((desc1.shape[0], desc2.shape[0])))
+    for row in range(desc1.shape[0]):
+        second_max = np.argpartition(dot_product[row, :], -2)
+        second_max = second_max[-2:]
+        max_features[row, second_max] += 1
+    for column in range(desc2.shape[0]):
+        second_max = np.argpartition(dot_product[:, column], -2)
+        second_max = second_max[-2:]
+        max_features[second_max:column] += 1
+
+    min_score_condition = dot_product > min_score
+    max_features = (max_features > 1) & min_score_condition
+    return np.nonzero(max_features)
 
 
 def apply_homography(pos1, H12):
