@@ -268,7 +268,7 @@ def compute_bounding_box(homography, w, h):
     maximum_y = max([upper_left[1], upper_right[1], lower_left[1], lower_right[1]])[0]
     res = np.array([[minimum_x, minimum_y], [maximum_x, maximum_y]])
 
-    return res.astype(np.int64)
+    return res.astype(int)
 
 
 def warp_channel(image, homography):
@@ -278,7 +278,15 @@ def warp_channel(image, homography):
     :param homography: homograhpy.
     :return: A 2d warped image.
     """
-    pass
+    upper_left, lower_right = compute_bounding_box(homography, image.shape[1], image.shape[0])
+
+    x_coords_range = np.arange(upper_left[0], lower_right[0] + 1)
+    y_coords_range = np.arange(upper_left[1], lower_right[1] + 1)
+    x_coords, y_coords = np.meshgrid(x_coords_range, y_coords_range)
+    grid = np.dstack((x_coords, y_coords)).reshape(x_coords.shape[0] * x_coords.shape[1], 2)
+    inverse_homography_mat = np.linalg.inv(homography)
+    original_coords = apply_homography(grid, inverse_homography_mat).reshape((x_coords.shape[0], x_coords.shape[1], 2))
+    return map_coordinates(image, [original_coords[:, :, 1], original_coords[:, :, 0]], order=1, prefilter=False)
 
 
 def warp_image(image, homography):
