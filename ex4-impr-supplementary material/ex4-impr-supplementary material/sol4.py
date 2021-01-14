@@ -126,7 +126,7 @@ def match_features(desc1, desc2, min_score):
     for column in range(desc2.shape[0]):
         second_max = np.argpartition(dot_product[:, column], -2)
         second_max = second_max[-2:]
-        max_features[second_max:column] += 1
+        max_features[second_max, column] += 1
 
     min_score_condition = dot_product > min_score
     max_features = (max_features > 1) & min_score_condition
@@ -142,7 +142,7 @@ def apply_homography(pos1, H12):
     """
     # we convert pos1 points into homogeneous coords by adding a 3rd coord (which equals 1)
     ones_array = np.ones((pos1.shape[0], 1))
-    homogeneous_pos1 = np.hstack(pos1, ones_array)
+    homogeneous_pos1 = np.hstack((pos1, ones_array))
     # now we multiply each vector in homogeneous_pos1 with H12 matrix
     matrices_multiplication = np.einsum('ij, kj->ki', H12, homogeneous_pos1)
     # now we divide by third coord to convert to homogeneous coords
@@ -185,13 +185,13 @@ def ransac_homography(points1, points2, num_iter, inlier_tol, translation_only=F
                                                   np.array([points2[random_p1_idx], points2[random_p2_idx]]),
                                                   translation_only)
         pos1_post_homography = apply_homography(points1, cur_homography)
-        euclidean_distance = np.array(np.square(np.linalg.norm(pos1_post_homography - points1, axis=1)))
-        cur_inlires_num = np.count_nonzero(euclidean_distance < inlier_tol)
+        euclidean_distance = np.array(np.square(pos1_post_homography - points1))
+        cur_inlieres_num = np.count_nonzero(euclidean_distance < inlier_tol)
 
-        if maximum_inliers_num < cur_inlires_num:
+        if maximum_inliers_num < cur_inlieres_num:
             max_homography_mat = cur_homography
             indexes_max_inliers_array = np.array(np.nonzero(euclidean_distance < inlier_tol))[0]
-            maximum_inliers_num = cur_inlires_num
+            maximum_inliers_num = cur_inlieres_num
 
     return [max_homography_mat, indexes_max_inliers_array]
 
@@ -205,11 +205,20 @@ def display_matches(im1, im2, points1, points2, inliers):
     :param pos2: An aray shape (N,2), containing N rows of [x,y] coordinates of matched points in im2.
     :param inliers: An array with shape (S,) of inlier matches.
     """
+    # for better visualisation first we color all lines with blue and then when go over the inliers and color
+    # them with yellow
     im = np.hstack((im1, im2))
-
     plt.imshow(im, cmap='gray')
+    points2_x = points2[:, 0] + len(im1[0])
+    points2_y = points2[:, 1]
+    for ind in range(len(points1)):
+        plt.plot([points1[ind][0], points2_x[ind]], [points1[ind][1], points2_y[ind]], c='b', mfc='r', lw=.4, ms=4,
+                 marker='o')
+    for ind in range(len(points1)):
+        if ind in inliers:
+            plt.plot([points1[ind][0], points2_x[ind]], [points1[ind][1], points2_y[ind]], c='y', mfc='r', lw=.4, ms=4,
+                     marker='o')
     plt.show()
-    # check out plt.plot
 
 
 def accumulate_homographies(H_succesive, m):
@@ -224,7 +233,19 @@ def accumulate_homographies(H_succesive, m):
     :return: A list of M 3x3 homography matrices,
       where H2m[i] transforms points from coordinate system i to coordinate system m
     """
-    pass
+    if len(H_succesive) == 0:
+        return H_succesive
+
+    H2m = [np.eye(3)]
+    for i in range(m, 0, -1):
+        new_homography = np.dot(H2m[0], H_succesive[i - 1])
+        H2m.insert(0, new_homography / new_homography[2, 2])  # normalized new_homography
+
+    for i in range(m, len(H_succesive)):
+        new_homography = np.dot(H2m[i], np.linalg.inv(H_succesive[i]))
+        H2m.append(new_homography / new_homography[2, 2])  # normalized new_homography
+
+    return H2m
 
 
 def compute_bounding_box(homography, w, h):
@@ -236,7 +257,18 @@ def compute_bounding_box(homography, w, h):
     :return: 2x2 array, where the first row is [x,y] of the top left corner,
      and the second row is the [x,y] of the bottom right corner
     """
-    pass
+    lower_left = np.transpose(apply_homography(np.array([[0, h]]), homography))
+    lower_right = np.transpose(apply_homography(np.array([[w, h]]), homography))
+    upper_left = np.transpose(apply_homography(np.array([[0, 0]]), homography))
+    upper_right = np.transpose(apply_homography(np.array([[w, 0]]), homography))
+
+    minimum_x = min([upper_left[0], upper_right[0], lower_left[0], lower_right[0]])[0]
+    maximum_x = max([upper_left[0], upper_right[0], lower_left[0], lower_right[0]])[0]
+    minimum_y = min([upper_left[1], upper_right[1], lower_left[1], lower_right[1]])[0]
+    maximum_y = max([upper_left[1], upper_right[1], lower_left[1], lower_right[1]])[0]
+    res = np.array([[minimum_x, minimum_y], [maximum_x, maximum_y]])
+
+    return res.astype(np.int64)
 
 
 def warp_channel(image, homography):
