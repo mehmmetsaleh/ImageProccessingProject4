@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 
 from scipy.ndimage.morphology import generate_binary_structure
-from scipy.ndimage.filters import maximum_filter
+from scipy.ndimage.filters import maximum_filter, convolve
 from scipy.ndimage import label, center_of_mass, map_coordinates
 import shutil
 from imageio import imwrite
@@ -17,8 +17,10 @@ from scipy.signal import convolve2d
 
 def derive_image(im):
     der_ker = np.array([[1, 0, -1]])
-    x_der = convolve2d(im, der_ker, 'same')
-    y_der = convolve2d(im, np.transpose(der_ker), 'same')
+    # x_der = convolve2d(im, der_ker, 'same')
+    # y_der = convolve2d(im, np.transpose(der_ker), 'same')
+    x_der = convolve(im, der_ker)
+    y_der = convolve(im, np.transpose(der_ker))
     return [x_der, y_der]
 
 
@@ -138,7 +140,18 @@ def apply_homography(pos1, H12):
     :param H12: A 3x3 homography matrix.
     :return: An array with the same shape as pos1 with [x,y] point coordinates obtained from transforming pos1 using H12.
     """
-    pass
+    # we convert pos1 points into homogeneous coords by adding a 3rd coord (which equals 1)
+    ones_array = np.ones((pos1.shape[0], 1))
+    homogeneous_pos1 = np.hstack(pos1, ones_array)
+    # now we multiply each vector in homogeneous_pos1 with H12 matrix
+    matrices_multiplication = np.einsum('ij, kj->ki', H12, homogeneous_pos1)
+    # now we divide by third coord to convert to homogeneous coords
+    third_coords = matrices_multiplication[:, 2]
+    first_hom_coords = np.divide(matrices_multiplication[:, 0], third_coords)
+    second_hom_coords = np.divide(matrices_multiplication[:, 1], third_coords)
+    # vertical stack them
+    res = np.vstack((first_hom_coords, second_hom_coords))
+    return np.transpose(res)
 
 
 def ransac_homography(points1, points2, num_iter, inlier_tol, translation_only=False):
@@ -154,7 +167,33 @@ def ransac_homography(points1, points2, num_iter, inlier_tol, translation_only=F
                 2) An Array with shape (S,) where S is the number of inliers,
                     containing the indices in pos1/pos2 of the maximal set of inlier matches found.
     """
-    pass
+    if num_iter == 0:
+        return [[], []]
+
+    n = len(points1)
+    max_homography_mat = np.array(np.zeros((3, 3)))
+
+    if n == 0:
+        return [max_homography_mat, []]
+
+    maximum_inliers_num = 0
+    indexes_max_inliers_array = np.array([])
+
+    for i in range(num_iter):
+        random_p1_idx, random_p2_idx = np.random.choice(n, size=2)  # choosing 2 points indexes randomly
+        cur_homography = estimate_rigid_transform(np.array([points1[random_p1_idx], points1[random_p2_idx]]),
+                                                  np.array([points2[random_p1_idx], points2[random_p2_idx]]),
+                                                  translation_only)
+        pos1_post_homography = apply_homography(points1, cur_homography)
+        euclidean_distance = np.array(np.square(np.linalg.norm(pos1_post_homography - points1, axis=1)))
+        cur_inlires_num = np.count_nonzero(euclidean_distance < inlier_tol)
+
+        if maximum_inliers_num < cur_inlires_num:
+            max_homography_mat = cur_homography
+            indexes_max_inliers_array = np.array(np.nonzero(euclidean_distance < inlier_tol))[0]
+            maximum_inliers_num = cur_inlires_num
+
+    return [max_homography_mat, indexes_max_inliers_array]
 
 
 def display_matches(im1, im2, points1, points2, inliers):
@@ -166,7 +205,11 @@ def display_matches(im1, im2, points1, points2, inliers):
     :param pos2: An aray shape (N,2), containing N rows of [x,y] coordinates of matched points in im2.
     :param inliers: An array with shape (S,) of inlier matches.
     """
-    pass
+    im = np.hstack((im1, im2))
+
+    plt.imshow(im, cmap='gray')
+    plt.show()
+    # check out plt.plot
 
 
 def accumulate_homographies(H_succesive, m):
