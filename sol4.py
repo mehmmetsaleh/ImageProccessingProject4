@@ -287,7 +287,7 @@ def warp_channel(image, homography):
     inverse_homography_mat = np.linalg.inv(homography)
     original_coords = apply_homography(grid, inverse_homography_mat).reshape((x_coords.shape[0], x_coords.shape[1], 2))
     return map_coordinates(image, [original_coords[:, :, 1], original_coords[:, :, 0]], order=1, prefilter=False)
-
+    # something wrong with this function
 
 def warp_image(image, homography):
     """
