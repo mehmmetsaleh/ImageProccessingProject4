@@ -1,2 +1,0 @@
-python runner.py
-PAUSE
