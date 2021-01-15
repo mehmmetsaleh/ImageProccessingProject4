@@ -113,9 +113,9 @@ def match_features(desc1, desc2, min_score):
                 1) An array with shape (M,) and dtype int of matching indices in desc1.
                 2) An array with shape (M,) and dtype int of matching indices in desc2.
     """
-    flattened_desc1 = desc1.reshape(desc1.shape[0], np.square(desc1.shape[1]))
-    flattened_desc2 = desc2.reshape(desc2.shape[0], np.square(desc2.shape[1]))
-    dot_product = np.dot(flattened_desc1, np.transpose(flattened_desc2))
+    flattened_desc1 = desc1.reshape(desc1.shape[0], desc1.shape[1]**2)
+    flattened_desc2 = desc2.reshape(desc2.shape[0], desc2.shape[1]**2)
+    dot_product = np.dot(flattened_desc1, flattened_desc2.transpose())
 
     # checking conditions:
     max_features = np.array(np.zeros((desc1.shape[0], desc2.shape[0])))
@@ -128,8 +128,7 @@ def match_features(desc1, desc2, min_score):
         second_max = second_max[-2:]
         max_features[second_max, column] += 1
 
-    min_score_condition = dot_product > min_score
-    max_features = (max_features > 1) & min_score_condition
+    max_features = np.logical_and(max_features > 1, dot_product > min_score)
     return np.nonzero(max_features)
 
 
@@ -151,7 +150,7 @@ def apply_homography(pos1, H12):
     second_hom_coords = np.divide(matrices_multiplication[:, 1], third_coords)
     # vertical stack them
     res = np.vstack((first_hom_coords, second_hom_coords))
-    return np.transpose(res)
+    return res.transpose()
 
 
 def ransac_homography(points1, points2, num_iter, inlier_tol, translation_only=False):
@@ -257,10 +256,10 @@ def compute_bounding_box(homography, w, h):
     :return: 2x2 array, where the first row is [x,y] of the top left corner,
      and the second row is the [x,y] of the bottom right corner
     """
-    lower_left = np.transpose(apply_homography(np.array([[0, h]]), homography))
-    lower_right = np.transpose(apply_homography(np.array([[w, h]]), homography))
-    upper_left = np.transpose(apply_homography(np.array([[0, 0]]), homography))
-    upper_right = np.transpose(apply_homography(np.array([[w, 0]]), homography))
+    lower_left = apply_homography(np.array([[0, h]]), homography).transpose()
+    lower_right = apply_homography(np.array([[w, h]]), homography).transpose()
+    upper_left = apply_homography(np.array([[0, 0]]), homography).transpose()
+    upper_right = apply_homography(np.array([[w, 0]]), homography).transpose()
 
     minimum_x = min([upper_left[0], upper_right[0], lower_left[0], lower_right[0]])[0]
     maximum_x = max([upper_left[0], upper_right[0], lower_left[0], lower_right[0]])[0]
@@ -278,16 +277,16 @@ def warp_channel(image, homography):
     :param homography: homograhpy.
     :return: A 2d warped image.
     """
-    upper_left, lower_right = compute_bounding_box(homography, image.shape[1], image.shape[0])
-
-    x_coords_range = np.arange(upper_left[0], lower_right[0] + 1)
-    y_coords_range = np.arange(upper_left[1], lower_right[1] + 1)
-    x_coords, y_coords = np.meshgrid(x_coords_range, y_coords_range)
-    grid = np.dstack((x_coords, y_coords)).reshape(x_coords.shape[0] * x_coords.shape[1], 2)
+    top_left, lower_right = compute_bounding_box(homography, image.shape[1], image.shape[0])
+    x_coords_range = np.arange(top_left[0], lower_right[0])
+    y_coords_range = np.arange(top_left[1], lower_right[1])
+    x_coords, y_coords = np.array(np.meshgrid(x_coords_range, y_coords_range))
     inverse_homography_mat = np.linalg.inv(homography)
-    original_coords = apply_homography(grid, inverse_homography_mat).reshape((x_coords.shape[0], x_coords.shape[1], 2))
-    return map_coordinates(image, [original_coords[:, :, 1], original_coords[:, :, 0]], order=1, prefilter=False)
-    # something wrong with this function
+    coords = np.array([x_coords, y_coords]).transpose()
+    org_shape = coords.shape
+    original_coords = apply_homography(coords.reshape(-1, 2), inverse_homography_mat).reshape(org_shape)
+    return map_coordinates(image, [original_coords[:, :, 1].T, original_coords[:, :, 0].T], order=1, prefilter=False)
+
 
 def warp_image(image, homography):
     """
