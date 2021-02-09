@@ -184,12 +184,14 @@ def ransac_homography(points1, points2, num_iter, inlier_tol, translation_only=F
                                                   np.array([points2[random_p1_idx], points2[random_p2_idx]]),
                                                   translation_only)
         pos1_post_homography = apply_homography(points1, cur_homography)
-        euclidean_distance = np.array(np.square(pos1_post_homography - points1))
-        cur_inlieres_num = np.count_nonzero(euclidean_distance < inlier_tol)
+        euclidean_distance = np.array(np.square(np.linalg.norm(pos1_post_homography - points2, axis=1)))
+        # TODO: changed to points2 (was points1 by mistake)
 
+        inlier_matches = euclidean_distance < inlier_tol  # TODO: added this to fix error
+        cur_inlieres_num = np.count_nonzero(inlier_matches)  # TODO: changed parameter
         if maximum_inliers_num < cur_inlieres_num:
             max_homography_mat = cur_homography
-            indexes_max_inliers_array = np.array(np.nonzero(euclidean_distance < inlier_tol))[0]
+            indexes_max_inliers_array = np.array(np.nonzero(inlier_matches))[0]  # TODO: changed parameter
             maximum_inliers_num = cur_inlieres_num
 
     return [max_homography_mat, indexes_max_inliers_array]
